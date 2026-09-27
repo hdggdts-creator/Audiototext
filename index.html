@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Audio to Text</title>
+<style>
+:root {
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --text: #1a1a1a;
+  --text-secondary: #666;
+  --border: #e0e0e0;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --danger: #dc2626;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16161a; --surface: #1f1f24; --text: #eaeaea;
+    --text-secondary: #9a9a9a; --border: #333;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16161a; --surface: #1f1f24; --text: #eaeaea;
+  --text-secondary: #9a9a9a; --border: #333;
+}
+html, body { height: 100%; }
+html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding: 20px 16px 40px;
+}
+.container { max-width: 640px; margin: 0 auto; }
+h1 { font-size: 1.4rem; margin-bottom: 4px; }
+.subtitle { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 20px; }
+.tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.tab-btn {
+  flex: 1; padding: 10px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); border-radius: 10px;
+  cursor: pointer; font-size: 0.9rem;
+}
+.tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.panel { display: none; }
+.panel.active { display: block; }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 18px; margin-bottom: 14px;
+}
+button.primary {
+  background: var(--accent); color: #fff; border: none; padding: 12px 18px;
+  border-radius: 10px; font-size: 0.95rem; cursor: pointer; width: 100%;
+}
+button.primary:hover { background: var(--accent-hover); }
+button.primary.recording { background: var(--danger); }
+button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+button.secondary {
+  background: transparent; border: 1px solid var(--border); color: var(--text);
+  padding: 8px 14px; border-radius: 8px; font-size: 0.85rem; cursor: pointer;
+}
+textarea {
+  width: 100%; min-height: 160px; border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px; background: var(--bg); color: var(--text);
+  font-size: 0.95rem; resize: vertical; margin-top: 12px;
+}
+.row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.status { font-size: 0.85rem; color: var(--text-secondary); margin-top: 8px; }
+.status.live { color: var(--danger); }
+input[type="file"] {
+  width: 100%; padding: 10px; border: 1px dashed var(--border);
+  border-radius: 10px; background: var(--bg); color: var(--text);
+}
+audio { width: 100%; margin-top: 10px; }
+.note {
+  font-size: 0.8rem; color: var(--text-secondary); background: var(--bg);
+  border-radius: 8px; padding: 10px; margin-top: 10px; line-height: 1.4;
+}
+.unsupported { color: var(--danger); font-size: 0.85rem; margin-top: 10px; }
+label.check { display:flex; align-items:center; gap:8px; font-size:0.85rem; margin-top:10px; cursor:pointer; }
+#printArea { display: none; }
+@media print {
+  body * { visibility: hidden !important; }
+  #printArea, #printArea * { visibility: visible !important; }
+  #printArea {
+    display: block !important; position: absolute; top: 0; left: 0; width: 100%;
+    padding: 30px; white-space: pre-wrap; font-family: Georgia, 'Times New Roman', serif;
+    font-size: 12pt; color: #000; background: #fff;
+  }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎙️ Audio → Text</h1>
+  <p class="subtitle">Dictate live, or transcribe an audio file with your microphone.</p>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="live">Live Dictation</button>
+    <button class="tab-btn" data-tab="file">From Audio File</button>
+  </div>
+
+  <div id="panel-live" class="panel active">
+    <div class="card">
+      <button id="liveBtn" class="primary">Start Recording</button>
+      <div id="liveStatus" class="status">Tap to start speaking.</div>
+      <textarea id="liveText" placeholder="Your speech will appear here..."></textarea>
+      <div class="row">
+        <button class="secondary" id="liveCopy">Copy</button>
+        <button class="secondary" id="liveDownload">Download .txt</button>
+        <button class="secondary" id="liveDownloadPdf">Download PDF</button>
+        <button class="secondary" id="liveClear">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="panel-file" class="panel">
+    <div class="card">
+      <input type="file" id="audioFile" accept="audio/*">
+      <audio id="audioPlayer" controls style="display:none"></audio>
+      <div class="note">Browsers can't read text directly out of an audio file. This plays the file while your microphone listens, so it works best with speakers on (not headphones) in a quiet room.</div>
+      <label class="check"><input type="checkbox" id="fileConsent"> I've enabled speakers so the mic can hear the file</label>
+      <button id="fileBtn" class="primary" style="margin-top:10px" disabled>Play &amp; Transcribe</button>
+      <div id="fileStatus" class="status"></div>
+      <textarea id="fileText" placeholder="Transcript will appear here..."></textarea>
+      <div class="row">
+        <button class="secondary" id="fileCopy">Copy</button>
+        <button class="secondary" id="fileDownload">Download .txt</button>
+        <button class="secondary" id="fileDownloadPdf">Download PDF</button>
+        <button class="secondary" id="fileClear">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="unsupportedMsg" class="unsupported" style="display:none">
+    Speech recognition isn't supported in this browser. Try Chrome or Edge on desktop or Android.
+  </div>
+</div>
+<div id="printArea"></div>
+
+<script>
+(function() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const tabs = document.querySelectorAll('.tab-btn');
+  const panels = { live: document.getElementById('panel-live'), file: document.getElementById('panel-file') };
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    Object.values(panels).forEach(p => p.classList.remove('active'));
+    panels[t.dataset.tab].classList.add('active');
+  }));
+
+  if (!SR) {
+    document.getElementById('unsupportedMsg').style.display = 'block';
+    document.getElementById('liveBtn').disabled = true;
+    document.getElementById('fileBtn').disabled = true;
+    return;
+  }
+
+  function makeRecognizer(onResult, onEnd) {
+    const rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-US';
+    let finalText = '';
+    rec.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalText += t + ' ';
+        else interim += t;
+      }
+      onResult(finalText, interim);
+    };
+    rec.onend = onEnd;
+    rec.onerror = onEnd;
+    return rec;
+  }
+
+  function download(text, filename) {
+    const blob = new Blob([text], {type: 'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function toPDF(text, titleBase) {
+    const area = document.getElementById('printArea');
+    area.textContent = text && text.trim() ? text : '(empty transcript)';
+    const originalTitle = document.title;
+    document.title = titleBase;
+    window.onafterprint = () => { document.title = originalTitle; };
+    window.print();
+  }
+
+  // Live dictation
+  let liveRec = null, liveRunning = false;
+  const liveBtn = document.getElementById('liveBtn');
+  const liveText = document.getElementById('liveText');
+  const liveStatus = document.getElementById('liveStatus');
+
+  liveBtn.addEventListener('click', () => {
+    if (liveRunning) { liveRec.stop(); return; }
+    liveRec = makeRecognizer(
+      (final, interim) => { liveText.value = final + interim; },
+      () => { liveRunning = false; liveBtn.textContent = 'Start Recording'; liveBtn.classList.remove('recording'); liveStatus.textContent = 'Stopped.'; liveStatus.classList.remove('live'); }
+    );
+    try { liveRec.start(); } catch(e) {}
+    liveRunning = true;
+    liveBtn.textContent = 'Stop';
+    liveBtn.classList.add('recording');
+    liveStatus.textContent = 'Listening...';
+    liveStatus.classList.add('live');
+  });
+  document.getElementById('liveCopy').addEventListener('click', () => navigator.clipboard.writeText(liveText.value));
+  document.getElementById('liveDownload').addEventListener('click', () => download(liveText.value, 'dictation.txt'));
+  document.getElementById('liveDownloadPdf').addEventListener('click', () => toPDF(liveText.value, 'dictation-transcript'));
+  document.getElementById('liveClear').addEventListener('click', () => liveText.value = '');
+
+  // File transcription
+  const audioFile = document.getElementById('audioFile');
+  const audioPlayer = document.getElementById('audioPlayer');
+  const fileConsent = document.getElementById('fileConsent');
+  const fileBtn = document.getElementById('fileBtn');
+  const fileStatus = document.getElementById('fileStatus');
+  const fileText = document.getElementById('fileText');
+  let fileRec = null, fileRunning = false;
+
+  function updateFileBtn() {
+    fileBtn.disabled = !(audioFile.files.length && fileConsent.checked);
+  }
+  audioFile.addEventListener('change', () => {
+    if (audioFile.files.length) {
+      audioPlayer.src = URL.createObjectURL(audioFile.files[0]);
+      audioPlayer.style.display = 'block';
+    }
+    updateFileBtn();
+  });
+  fileConsent.addEventListener('change', updateFileBtn);
+
+  fileBtn.addEventListener('click', () => {
+    if (fileRunning) { fileRec.stop(); audioPlayer.pause(); return; }
+    fileRec = makeRecognizer(
+      (final, interim) => { fileText.value = final + interim; },
+      () => { fileRunning = false; fileBtn.textContent = 'Play & Transcribe'; fileStatus.textContent = 'Stopped.'; fileStatus.classList.remove('live'); }
+    );
+    try { fileRec.start(); } catch(e) {}
+    audioPlayer.currentTime = 0;
+    audioPlayer.play();
+    fileRunning = true;
+    fileBtn.textContent = 'Stop';
+    fileStatus.textContent = 'Listening to playback...';
+    fileStatus.classList.add('live');
+    audioPlayer.onended = () => { if (fileRunning) fileRec.stop(); };
+  });
+  document.getElementById('fileCopy').addEventListener('click', () => navigator.clipboard.writeText(fileText.value));
+  document.getElementById('fileDownload').addEventListener('click', () => download(fileText.value, 'transcript.txt'));
+  document.getElementById('fileDownloadPdf').addEventListener('click', () => toPDF(fileText.value, 'audio-transcript'));
+  document.getElementById('fileClear').addEventListener('click', () => fileText.value = '');
+})();
+</script>
+</body>
+</html>
